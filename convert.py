@@ -28,7 +28,6 @@ import uuid
 import getopt
 import sys
 import os
-from nbt import nbt
 
 
 """Current version of the package"""

@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+"""
+MC online to offline UUID converter
+
+Renames all player data files from online UUIDs to offline UUIDs based on the names of the players
+"""
 
 import requests
 import json
@@ -6,6 +11,11 @@ import uuid
 import getopt
 import sys
 import os
+from nbt import nbt
+
+
+"""Current version of the package"""
+VERSION = '1.0.0'
 
 
 class NULL_NAMESPACE:
@@ -41,17 +51,27 @@ def name_to_offline_uuid(name):
     """Return the *offline* UUID of a player name"""
     return uuid.uuid3(NULL_NAMESPACE, 'OfflinePlayer:%s' % name)
 
+def print_usage():
+    """Print the usage of the program to console"""
+    print('MC Online to offline UUID converter V%s' % VERSION)
+    print('(C) 2021 Jan Blaesi')
+    print('')
+    print('%s [-h] [-p <path_to_world>]' % sys.argv[0])
+    print('')
+    print('-p <path_to_world>   Path to the world in which the player data files shall be updated, defaults to ./world')
+    print('-h                   Show this help')
+
 def main(argv):
     try:
         opts, args = getopt.getopt(argv, "hp:", ["path="])
     except getopt.GetoptError:
-        print('%s -p <path_to_world>' % sys.argv[0])
+        print_usage()
         sys.exit(2)
 
-    path = None
+    path = '%s/world' % os.getcwd()
     for opt, arg in opts:
         if opt == '-h':
-            print('%s -p <path_to_world>' % sys.argv[0])
+            print_usage()
             sys.exit()
         elif opt in ('-p', '--path'):
             path = arg
@@ -66,32 +86,38 @@ def main(argv):
 
     num_converted = 0
     num_failed = 0
-    for file in os.scandir('%s/playerdata' % path):
-        if file.is_file() and file.name.endswith('.dat'):
-            try:
-                online_uuid = uuid.UUID(file.name.split('.')[0])
-            except:
-                print('Failed to read player data file %s' % file.name)
-                num_failed += 1
-                continue
+    uuid_cache = {}
+    for dir in ['advancements', 'playerdata', 'stats']:
+        for file in os.scandir('%s/%s' % (path, dir)):
+            if file.is_file() and (file.name.endswith('.dat') or file.name.endswith('.json')):
+                try:
+                    online_uuid = uuid.UUID(file.name.split('.')[0])
+                except:
+                    print('Failed to read player data file %s' % file.name)
+                    num_failed += 1
+                    continue
 
-            player_name = online_uuid_to_name(online_uuid)
-            if not player_name:
-                print('Failed to get username for UUID %s' % online_uuid)
-                num_failed += 1
-                continue
+                if online_uuid in uuid_cache:
+                    offline_uuid = uuid_cache[online_uuid]
+                else:
+                    player_name = online_uuid_to_name(online_uuid)
+                    if not player_name:
+                        print('Failed to get username for UUID %s' % online_uuid)
+                        num_failed += 1
+                        continue
 
-            offline_uuid = name_to_offline_uuid(player_name)
-            if not offline_uuid:
-                print('Failed to get offline UUID from username %s' % player_name)
-                num_failed += 1
-                continue
+                    offline_uuid = name_to_offline_uuid(player_name)
+                    if not offline_uuid:
+                        print('Failed to get offline UUID from username %s' % player_name)
+                        num_failed += 1
+                        continue
 
-            print('%s -> %s -> %s' % (online_uuid, player_name, offline_uuid))
-            os.rename(file.path, file.path.replace(file.name, '%s.dat' % offline_uuid))
-            num_converted += 1
-    
-    print('%d player data files converted successfully, %d failed.' % (num_converted, num_failed))
+                    uuid_cache[online_uuid] = offline_uuid
+
+                os.rename(file.path, file.path.replace(str(online_uuid), str(offline_uuid)))
+                num_converted += 1
+
+    print('%d files converted successfully, %d failed.' % (num_converted, num_failed))
 
 if __name__ == '__main__':
     main(sys.argv[1:])
